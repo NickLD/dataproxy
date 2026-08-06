@@ -19,9 +19,11 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.10.2
+      - name: Install Gradle 8.10.2
+        run: |
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.10.2-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /opt
+          echo "/opt/gradle-8.10.2/bin" >> "$GITHUB_PATH"
 
       - name: Assemble debug APK
         run: gradle :app:assembleDebug --no-daemon --console=plain
