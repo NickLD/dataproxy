@@ -26,7 +26,10 @@ jobs:
           echo "/opt/gradle-8.10.2/bin" >> "$GITHUB_PATH"
 
       - name: Assemble debug APK
-        run: gradle :app:assembleDebug --no-daemon --console=plain
+        # gradle.properties pins org.gradle.java.home to the upstream
+        # author's local machine path; override it here rather than edit
+        # a file we don't want to carry into an eventual upstream PR.
+        run: gradle -Dorg.gradle.java.home="$JAVA_HOME" :app:assembleDebug --no-daemon --console=plain
 
       - uses: actions/upload-artifact@v4
         with:
