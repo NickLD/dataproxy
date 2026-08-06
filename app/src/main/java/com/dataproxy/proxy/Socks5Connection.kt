@@ -387,7 +387,7 @@ class Socks5Connection(
     companion object {
         private const val TAG = "Socks5Conn"
 
-        private const val BUFFER_SIZE = 16 * 1024
+        private const val BUFFER_SIZE = 32 * 1024
         private const val HANDSHAKE_TIMEOUT_MS = 15_000
         private const val CONNECT_TIMEOUT_MS = 15_000
 
