@@ -19,3 +19,6 @@ local.properties
 *.jks
 *.keystore
 signing.properties
+
+# Local agent tooling — worktrees, scratch state
+/.claude/
