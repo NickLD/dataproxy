@@ -452,13 +452,14 @@ class ProxyService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notif = NotificationCompat.Builder(this, BIND_FAIL_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_proxy)
             .setContentTitle("DataProxy couldn't start on \"$label\"")
             .setContentText(message)
             .setAutoCancel(true)
             .setContentIntent(openIntent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
             .build()
         getSystemService(NotificationManager::class.java).notify(BIND_FAIL_NOTIF_ID, notif)
     }
@@ -475,6 +476,16 @@ class ProxyService : Service() {
                 setShowBadge(false)
                 enableVibration(false)
                 enableLights(false)
+            }
+            mgr.createNotificationChannel(ch)
+        }
+        if (mgr.getNotificationChannel(BIND_FAIL_CHANNEL_ID) == null) {
+            val ch = NotificationChannel(
+                BIND_FAIL_CHANNEL_ID,
+                "DataProxy alerts",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "Auto-mode activation failures"
             }
             mgr.createNotificationChannel(ch)
         }
@@ -523,6 +534,7 @@ class ProxyService : Service() {
         const val DEFAULT_PORT = 1080
 
         private const val CHANNEL_ID = "dataproxy.status"
+        private const val BIND_FAIL_CHANNEL_ID = "dataproxy.alerts"
         private const val NOTIF_ID = 1001
         private const val BIND_FAIL_NOTIF_ID = 1002
 
