@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -88,12 +89,32 @@ import com.dataproxy.util.OemHelper
 fun AntiKillScreen(
     viewModel: MainViewModel,
     onBack: () -> Unit,
+    onOpenTrustedNetworks: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val autoStart by viewModel.autoStartOnBoot.collectAsStateWithLifecycle()
+    val autoNetworkMode by viewModel.autoNetworkModeEnabled.collectAsStateWithLifecycle()
+    var locationGranted by remember {
+        mutableStateOf(
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_FINE_LOCATION,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val locationServicesOn = remember {
+        val lm = context.getSystemService(android.location.LocationManager::class.java)
+        lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
+            lm?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
+    }
+    val locationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        locationGranted = granted
+        if (granted) viewModel.setAutoNetworkModeEnabled(true)
+    }
     var infoExpanded by rememberSaveable { mutableStateOf(false) }
 
     // Auto-detectable steps are queried live from the system on every resume.
@@ -194,6 +215,20 @@ fun AntiKillScreen(
             WhatIsThisBanner(visible = infoExpanded, onClose = { infoExpanded = false })
             HeroCard(pct = pct, granted = grantedCount, total = total, allDone = allDone)
             AutoStartCard(enabled = autoStart, onToggle = viewModel::setAutoStartOnBoot)
+            AutoNetworkModeCard(
+                enabled = autoNetworkMode,
+                locationServicesOn = locationServicesOn,
+                onToggle = { turningOn ->
+                    if (!turningOn) {
+                        viewModel.setAutoNetworkModeEnabled(false)
+                    } else if (locationGranted) {
+                        viewModel.setAutoNetworkModeEnabled(true)
+                    } else {
+                        locationLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    }
+                },
+                onManage = onOpenTrustedNetworks,
+            )
             AntiKillStep.entries.forEach { step ->
                 StepCard(
                     step = step,
@@ -396,6 +431,91 @@ private fun AutoStartCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
                 uncheckedBorderColor = OutlineStrong,
             ),
         )
+    }
+}
+
+/**
+ * Auto network mode: activates the proxy on a list of trusted Wi-Fi SSIDs
+ * and stands it down on departure. Turning this on is the only trigger for
+ * the ACCESS_FINE_LOCATION prompt — Android requires it to read the current
+ * SSID, and this app never asks for it at install or launch.
+ */
+@Composable
+private fun AutoNetworkModeCard(
+    enabled: Boolean,
+    locationServicesOn: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onManage: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(SurfaceLow)
+            .border(1.dp, OutlineSoft, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Accent.copy(alpha = if (enabled) 0.16f else 0.10f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.Wifi,
+                    contentDescription = null,
+                    tint = if (enabled) Accent else TextSecondary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Auto network mode",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (enabled)
+                        "Activates on your trusted networks, stands down elsewhere. Also enables \"Start after reboot\"."
+                    else
+                        "Automatically start on trusted Wi-Fi networks and stop everywhere else.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = SurfaceLow,
+                    checkedTrackColor = Accent,
+                    uncheckedThumbColor = TextSecondary,
+                    uncheckedTrackColor = SurfaceLow,
+                    uncheckedBorderColor = OutlineStrong,
+                ),
+            )
+        }
+        if (enabled && !locationServicesOn) {
+            Spacer(Modifier.height(10.dp))
+            HintBanner("Location services are off — DataProxy can't read the current Wi-Fi network without them. Turn Location on in system settings.")
+        }
+        if (enabled) {
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onManage,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Manage trusted networks")
+            }
+        }
     }
 }
 
