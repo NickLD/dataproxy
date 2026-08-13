@@ -15,12 +15,16 @@ import androidx.core.app.NotificationCompat
 import com.dataproxy.MainActivity
 import com.dataproxy.R
 import com.dataproxy.network.CellularNetworkProvider
+import com.dataproxy.network.WifiSsidWatcher
 import com.dataproxy.proxy.AuthConfig
 import com.dataproxy.proxy.ConnectionRegistry
 import com.dataproxy.proxy.Socks5Server
 import com.dataproxy.proxy.SpeedSampler
+import com.dataproxy.util.AntiKillPreferences
 import com.dataproxy.util.ByteFormatter
 import com.dataproxy.util.RateUnit
+import com.dataproxy.util.TrustedNetwork
+import com.dataproxy.util.TrustedNetworks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,6 +52,7 @@ class ProxyService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val cellular by lazy { CellularNetworkProvider(applicationContext) }
+    private val wifiWatcher by lazy { WifiSsidWatcher(applicationContext) }
     private val registry = ConnectionRegistry()
     private val sampler = SpeedSampler()
 
@@ -55,6 +60,9 @@ class ProxyService : Service() {
     private var startJob: Job? = null
     private var publishJob: Job? = null
     private var cellularWatchJob: Job? = null
+    private var wifiWatchJob: Job? = null
+    private var autoDemoteJob: Job? = null
+    private var activeSsid: String? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val _state = MutableStateFlow<State>(State.Stopped)
@@ -64,6 +72,7 @@ class ProxyService : Service() {
     val rates: StateFlow<SpeedSampler.Rates> = sampler.rates
     // Computed: defers cellular's by-lazy init until first read (post-onCreate).
     val cellularState: StateFlow<CellularNetworkProvider.State> get() = cellular.state
+    val wifiSsidState: StateFlow<String?> get() = wifiWatcher.ssid
 
     sealed interface State {
         data object Stopped : State
@@ -71,6 +80,20 @@ class ProxyService : Service() {
         data class Running(val bindAddress: String, val port: Int) : State
         /** Listener still bound; cellular link is gone, so outbound connects fail. */
         data class Paused(val bindAddress: String, val port: Int, val reason: String) : State
+        /**
+         * Auto mode is on, no trusted network currently matches. A
+         * [WifiSsidWatcher] is running; nothing else is — no server, no
+         * cellular request, no wake lock. Named `Idle`, not "Standby" —
+         * reads as passively off, not armed-and-ready.
+         */
+        data class Idle(val reason: String = "Waiting for a trusted network") : State
+        /**
+         * The user tapped the power button off while Auto mode was
+         * managing the proxy. The watcher keeps running but won't
+         * self-promote again until [ssidAtStop] is left — a genuine SSID
+         * transition, not just re-observing the same network.
+         */
+        data class ManuallyStopped(val ssidAtStop: String?) : State
         data class Error(val message: String, val kind: ErrorKind = ErrorKind.Generic) : State
 
         enum class ErrorKind { Generic, MobileDataUnavailable, BindFailed }
@@ -100,6 +123,8 @@ class ProxyService : Service() {
                 stopProxy()
                 stopSelf()
             }
+            ACTION_START_AUTO -> startAutoWatch()
+            ACTION_DISABLE_AUTO -> stopAutoWatch()
         }
         return START_NOT_STICKY
     }
@@ -112,7 +137,70 @@ class ProxyService : Service() {
 
     // ----------------------------------------------------------------- control
 
-    fun startProxy(bindAddress: String, port: Int) {
+    /**
+     * Auto mode's entry point: brings the service up watching for a
+     * trusted network, without touching cellular/the SOCKS server until a
+     * match is found. Idempotent — a second call while already watching
+     * or running is a no-op.
+     */
+    fun startAutoWatch() {
+        if (_state.value !is State.Stopped) return
+        wifiWatcher.start()
+        _state.value = State.Idle()
+        startForegroundNow()
+        wifiWatchJob = scope.launch {
+            wifiWatcher.ssid.collect { ssid -> onSsidChanged(ssid) }
+        }
+    }
+
+    /** Full teardown, called when the user disables Auto mode entirely. */
+    fun stopAutoWatch() {
+        autoDemoteJob?.cancel(); autoDemoteJob = null
+        wifiWatchJob?.cancel(); wifiWatchJob = null
+        wifiWatcher.stop()
+        activeSsid = null
+        _state.value = State.Stopped
+        fullCleanup()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+    }
+
+    private fun onSsidChanged(ssid: String?) {
+        autoDemoteJob?.cancel(); autoDemoteJob = null
+        val match = ssid?.let { TrustedNetworks.find(applicationContext, it) }
+        when (val cur = _state.value) {
+            is State.Idle -> if (match != null) promote(match)
+            is State.Running, is State.Paused -> {
+                if (match == null || match.ssid != activeSsid) {
+                    autoDemoteJob = scope.launch {
+                        delay(5_000L)
+                        demoteToIdle()
+                    }
+                }
+            }
+            is State.ManuallyStopped -> {
+                if (ssid != cur.ssidAtStop) {
+                    _state.value = State.Idle()
+                    if (match != null) promote(match)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    private fun promote(network: TrustedNetwork) {
+        activeSsid = network.ssid
+        startProxy(network.address, network.port, isAutoActivation = true)
+    }
+
+    private fun demoteToIdle() {
+        if (_state.value !is State.Running && _state.value !is State.Paused) return
+        fullCleanup()
+        activeSsid = null
+        _state.value = State.Idle()
+        startForegroundNow()
+    }
+
+    fun startProxy(bindAddress: String, port: Int, isAutoActivation: Boolean = false) {
         if (_state.value is State.Running || _state.value is State.Starting) return
 
         // Clear-state + kill: wipe everything from any previous cycle before
@@ -120,13 +208,20 @@ class ProxyService : Service() {
         fullCleanup()
 
         _state.value = State.Starting(bindAddress, port)
-        startForegroundNow(bindAddress, port)
+        startForegroundNow()
 
         cellular.start()
         startJob = scope.launch {
             val net = cellular.awaitAvailable(15_000L)
             if (_state.value !is State.Starting) return@launch
             if (net == null) {
+                if (isAutoActivation) {
+                    fullCleanup()
+                    activeSsid = null
+                    _state.value = State.Idle()
+                    startForegroundNow()
+                    return@launch
+                }
                 _state.value = State.Error(
                     message = "Mobile data is unavailable. Turn it on to start the proxy.",
                     kind = State.ErrorKind.MobileDataUnavailable,
@@ -141,12 +236,21 @@ class ProxyService : Service() {
                 cellular = cellular,
                 registry = registry,
                 onFatal = { e ->
-                    _state.value = State.Error(
-                        message = e.message ?: "Bind failed",
-                        kind = State.ErrorKind.BindFailed,
-                    )
-                    fullCleanup()
-                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    if (isAutoActivation) {
+                        TrustedNetworks.setBindError(applicationContext, activeSsid ?: "", e.message ?: "Bind failed")
+                        postBindFailureNotification(activeSsid, e.message ?: "Bind failed")
+                        fullCleanup()
+                        activeSsid = null
+                        _state.value = State.Idle()
+                        startForegroundNow()
+                    } else {
+                        _state.value = State.Error(
+                            message = e.message ?: "Bind failed",
+                            kind = State.ErrorKind.BindFailed,
+                        )
+                        fullCleanup()
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    }
                 },
                 authProvider = ::currentAuthConfig,
             )
@@ -157,12 +261,22 @@ class ProxyService : Service() {
                 acquireWakeLock()
                 startSampling()
                 startCellularWatch(bindAddress, port)
-                updateNotification(bindAddress, port, totals.value, rates.value)
+                updateNotification()
             }
         }
     }
 
     fun stopProxy() {
+        if (AntiKillPreferences.autoNetworkModeEnabled(applicationContext) &&
+            _state.value !is State.Stopped
+        ) {
+            val ssidAtStop = wifiWatcher.ssid.value
+            fullCleanup()
+            activeSsid = null
+            _state.value = State.ManuallyStopped(ssidAtStop)
+            startForegroundNow()
+            return
+        }
         _state.value = State.Stopped
         fullCleanup()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -198,7 +312,7 @@ class ProxyService : Service() {
                     is CellularNetworkProvider.State.Available -> {
                         if (cur is State.Paused) {
                             _state.value = State.Running(addr, port)
-                            updateNotification(addr, port, totals.value, rates.value)
+                            updateNotification()
                         }
                     }
                     is CellularNetworkProvider.State.Lost,
@@ -208,7 +322,7 @@ class ProxyService : Service() {
                                 addr, port,
                                 "Waiting for mobile data",
                             )
-                            updateNotification(addr, port, totals.value, rates.value)
+                            updateNotification()
                         }
                     }
                     else -> Unit
@@ -219,8 +333,8 @@ class ProxyService : Service() {
 
     // -------------------------------------------------------------- foreground
 
-    private fun startForegroundNow(addr: String, port: Int) {
-        val notif = buildNotification(addr, port, totals.value, rates.value)
+    private fun startForegroundNow() {
+        val notif = buildNotification(totals.value, rates.value)
         if (Build.VERSION.SDK_INT >= 34) {
             // specialUse (not dataSync): dataSync foreground services can't be
             // started from a BOOT_COMPLETED receiver on Android 15+, which would
@@ -244,9 +358,9 @@ class ProxyService : Service() {
                 val (up, down) = registry.snapshotBytes()
                 sampler.sample(up, down)
                 registry.publish()
-                when (val s = _state.value) {
-                    is State.Running -> updateNotification(s.bindAddress, s.port, totals.value, rates.value)
-                    is State.Paused -> updateNotification(s.bindAddress, s.port, totals.value, rates.value)
+                when (_state.value) {
+                    is State.Running -> updateNotification()
+                    is State.Paused -> updateNotification()
                     else -> Unit
                 }
                 delay(1000L)
@@ -255,16 +369,14 @@ class ProxyService : Service() {
     }
 
     private fun updateNotification(
-        addr: String, port: Int,
-        totals: ConnectionRegistry.Totals,
-        rates: SpeedSampler.Rates,
+        totals: ConnectionRegistry.Totals = this.totals.value,
+        rates: SpeedSampler.Rates = this.rates.value,
     ) {
         val mgr = getSystemService(NotificationManager::class.java)
-        mgr.notify(NOTIF_ID, buildNotification(addr, port, totals, rates))
+        mgr.notify(NOTIF_ID, buildNotification(totals, rates))
     }
 
     private fun buildNotification(
-        addr: String, port: Int,
         totals: ConnectionRegistry.Totals,
         rates: SpeedSampler.Rates,
     ): Notification {
@@ -279,13 +391,19 @@ class ProxyService : Service() {
             Intent(this, ProxyService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val isPaused = _state.value is State.Paused
-        val title = if (isPaused) "DataProxy · paused" else "DataProxy · $addr:$port"
-        val rateUnit = RateUnit.fromKey(
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_RATE_UNIT, null)
-        )
-        val sub = if (isPaused) "Waiting for mobile data"
-        else "${totals.active} conn  ·  ↑${rateText(rates.upBps, rateUnit)}  ↓${rateText(rates.downBps, rateUnit)}"
+        val (title, sub) = when (val s = _state.value) {
+            is State.Running -> {
+                val rateUnit = RateUnit.fromKey(
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_RATE_UNIT, null)
+                )
+                "DataProxy · ${s.bindAddress}:${s.port}" to
+                    "${totals.active} conn  ·  ↑${rateText(rates.upBps, rateUnit)}  ↓${rateText(rates.downBps, rateUnit)}"
+            }
+            is State.Paused -> "DataProxy · paused" to "Waiting for mobile data"
+            is State.Idle -> "DataProxy · idle" to s.reason
+            is State.ManuallyStopped -> "DataProxy · idle" to "Stopped — waiting for a network change"
+            else -> "DataProxy" to ""
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_proxy)
             .setContentTitle(title)
@@ -355,6 +473,8 @@ class ProxyService : Service() {
     companion object {
         const val ACTION_START = "com.dataproxy.ACTION_START"
         const val ACTION_STOP = "com.dataproxy.ACTION_STOP"
+        const val ACTION_START_AUTO = "com.dataproxy.ACTION_START_AUTO"
+        const val ACTION_DISABLE_AUTO = "com.dataproxy.ACTION_DISABLE_AUTO"
         const val EXTRA_BIND_ADDRESS = "extra.bindAddress"
         const val EXTRA_PORT = "extra.port"
         const val DEFAULT_PORT = 1080
@@ -384,5 +504,11 @@ class ProxyService : Service() {
 
         fun stopIntent(ctx: Context) =
             Intent(ctx, ProxyService::class.java).setAction(ACTION_STOP)
+
+        fun startAutoIntent(ctx: Context) =
+            Intent(ctx, ProxyService::class.java).setAction(ACTION_START_AUTO)
+
+        fun disableAutoIntent(ctx: Context) =
+            Intent(ctx, ProxyService::class.java).setAction(ACTION_DISABLE_AUTO)
     }
 }
