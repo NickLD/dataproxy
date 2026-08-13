@@ -241,7 +241,7 @@ private fun TrustedNetworkEditDialog(
         },
         confirmButton = {
             androidx.compose.material3.TextButton(
-                onClick = { if (ssid.isNotBlank()) onSave(TrustedNetwork(ssid.trim(), address, port, initial.lastBindError)) },
+                onClick = { if (ssid.isNotBlank()) onSave(TrustedNetwork(ssid.trim(), address, port, lastBindError = null)) },
             ) { Text("Save", color = Accent, fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = {
