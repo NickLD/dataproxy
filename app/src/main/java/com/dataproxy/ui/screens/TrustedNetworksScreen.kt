@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +60,7 @@ fun TrustedNetworksScreen(
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+    LaunchedEffect(Unit) { viewModel.refreshTrustedNetworks() }
     val networks by viewModel.trustedNetworks.collectAsStateWithLifecycle()
     val currentSsid by viewModel.currentWifiSsid.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<TrustedNetwork?>(null) }
