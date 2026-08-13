@@ -39,6 +39,7 @@ class WifiSsidWatcher(context: Context) {
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+            Log.w(TAG, "DIAG onCapabilitiesChanged fired network=$network")
             currentNetwork = network
             _ssid.value = extractSsid(caps)
         }
@@ -79,11 +80,15 @@ class WifiSsidWatcher(context: Context) {
     private fun extractSsid(caps: NetworkCapabilities): String? {
         val raw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val info = caps.transportInfo as? WifiInfo
-            runCatching { info?.ssid }.getOrNull()
+            Log.w(TAG, "DIAG transportInfo=${caps.transportInfo} castOk=${info != null} class=${caps.transportInfo?.javaClass}")
+            val result = runCatching { info?.ssid }
+            Log.w(TAG, "DIAG ssid read isSuccess=${result.isSuccess} value=${result.getOrNull()} exception=${result.exceptionOrNull()}")
+            result.getOrNull()
         } else {
             @Suppress("DEPRECATION")
             runCatching { wifiManager.connectionInfo?.ssid }.getOrNull()
         }
+        Log.w(TAG, "DIAG raw=$raw sdkInt=${Build.VERSION.SDK_INT}")
         if (raw.isNullOrEmpty() || raw == UNKNOWN_SSID) return null
         // WifiInfo.getSSID() double-quotes the SSID when it's valid UTF-8
         // text — the common case for a human-chosen network name.
