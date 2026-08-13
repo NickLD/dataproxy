@@ -39,15 +39,22 @@ class WifiSsidWatcher(context: Context) {
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+            currentNetwork = network
             _ssid.value = extractSsid(caps)
         }
 
         override fun onLost(network: Network) {
-            _ssid.value = null
+            if (currentNetwork == network) {
+                currentNetwork = null
+                _ssid.value = null
+            }
         }
     }
 
     private var registered = false
+
+    @Volatile
+    private var currentNetwork: Network? = null
 
     @Synchronized
     fun start() {
@@ -56,8 +63,8 @@ class WifiSsidWatcher(context: Context) {
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
         runCatching { cm.registerNetworkCallback(request, callback) }
+            .onSuccess { registered = true }
             .onFailure { Log.w(TAG, "registerNetworkCallback failed: ${it.message}") }
-        registered = true
     }
 
     @Synchronized
@@ -65,6 +72,7 @@ class WifiSsidWatcher(context: Context) {
         if (!registered) return
         runCatching { cm.unregisterNetworkCallback(callback) }
         registered = false
+        currentNetwork = null
         _ssid.value = null
     }
 
