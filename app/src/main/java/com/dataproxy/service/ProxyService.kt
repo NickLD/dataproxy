@@ -121,7 +121,7 @@ class ProxyService : Service() {
             }
             ACTION_STOP -> {
                 stopProxy()
-                stopSelf()
+                if (_state.value is State.Stopped) stopSelf()
             }
             ACTION_START_AUTO -> startAutoWatch()
             ACTION_DISABLE_AUTO -> stopAutoWatch()
@@ -131,7 +131,10 @@ class ProxyService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        stopProxy()
+        autoDemoteJob?.cancel()
+        wifiWatchJob?.cancel()
+        wifiWatcher.stop()
+        fullCleanup()
         scope.coroutineContext[Job]?.cancel()
     }
 
