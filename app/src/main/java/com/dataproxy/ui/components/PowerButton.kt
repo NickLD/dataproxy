@@ -43,7 +43,7 @@ import com.dataproxy.ui.theme.TextMuted
 import com.dataproxy.ui.theme.TextSecondary
 import com.dataproxy.ui.theme.Warning
 
-enum class PowerState { Off, Starting, On, Paused, Error }
+enum class PowerState { Off, Starting, On, Paused, Error, Idle, ManuallyStopped }
 
 @Composable
 fun PowerButton(
@@ -59,6 +59,8 @@ fun PowerButton(
         PowerState.Paused -> Warning
         PowerState.Error -> Danger
         PowerState.Off -> TextMuted
+        PowerState.Idle -> TextMuted
+        PowerState.ManuallyStopped -> TextMuted
     }
 
     val infinite = rememberInfiniteTransition(label = "pulse")
@@ -156,7 +158,7 @@ fun PowerButton(
                             ),
                         ),
                     )
-                    PowerState.Off -> drawArc(
+                    PowerState.Off, PowerState.Idle, PowerState.ManuallyStopped -> drawArc(
                         color = AccentDim.copy(alpha = 0.35f),
                         startAngle = -90f, sweepAngle = 360f, useCenter = false,
                         topLeft = topLeft, size = arcSize,
@@ -198,6 +200,8 @@ fun PowerButton(
                 PowerState.Starting -> "establishing tunnel..."
                 PowerState.Paused -> "still listening · waiting for mobile data"
                 PowerState.Error -> "tap to retry"
+                PowerState.Idle -> "watching for a trusted network"
+                PowerState.ManuallyStopped -> "stopped · waiting for a network change"
             },
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary,

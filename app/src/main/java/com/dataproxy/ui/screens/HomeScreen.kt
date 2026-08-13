@@ -90,6 +90,8 @@ fun HomeScreen(
         is ProxyService.State.Starting -> PowerState.Starting
         is ProxyService.State.Paused -> PowerState.Paused
         is ProxyService.State.Error -> PowerState.Error
+        is ProxyService.State.Idle -> PowerState.Idle
+        is ProxyService.State.ManuallyStopped -> PowerState.ManuallyStopped
         else -> PowerState.Off
     }
     val statusLabel = when (val s = serviceState) {
@@ -97,6 +99,8 @@ fun HomeScreen(
         is ProxyService.State.Starting -> "Starting on ${s.bindAddress}:${s.port}"
         is ProxyService.State.Paused -> "Paused · ${s.bindAddress}:${s.port}"
         is ProxyService.State.Error -> s.message.take(60)
+        is ProxyService.State.Idle -> "Idle"
+        is ProxyService.State.ManuallyStopped -> "Idle"
         else -> "Proxy offline"
     }
 
