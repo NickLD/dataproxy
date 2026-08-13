@@ -28,17 +28,20 @@ class BootReceiver : BroadcastReceiver() {
         if (!relevant) return
         if (!AntiKillPreferences.autoStartOnBoot(context)) return
 
-        val prefs = context.getSharedPreferences(ProxyService.PREFS_NAME, Context.MODE_PRIVATE)
-        val addr = prefs.getString(ProxyService.PREF_BIND_ADDRESS, "0.0.0.0") ?: "0.0.0.0"
-        val port = prefs.getInt(ProxyService.PREF_PORT, ProxyService.DEFAULT_PORT)
+        val serviceIntent = if (AntiKillPreferences.autoNetworkModeEnabled(context)) {
+            // Auto mode owns its own per-network address/port — boot always
+            // brings the service up watching, not immediately active.
+            ProxyService.startAutoIntent(context)
+        } else {
+            val prefs = context.getSharedPreferences(ProxyService.PREFS_NAME, Context.MODE_PRIVATE)
+            val addr = prefs.getString(ProxyService.PREF_BIND_ADDRESS, "0.0.0.0") ?: "0.0.0.0"
+            val port = prefs.getInt(ProxyService.PREF_PORT, ProxyService.DEFAULT_PORT)
+            ProxyService.startIntent(context, addr, port)
+        }
 
         // startForegroundService is required (we're a background context here);
-        // the service calls startForeground() synchronously in startProxy.
-        runCatching {
-            ContextCompat.startForegroundService(
-                context,
-                ProxyService.startIntent(context, addr, port),
-            )
-        }
+        // the service calls startForeground() synchronously in startProxy /
+        // startAutoWatch.
+        runCatching { ContextCompat.startForegroundService(context, serviceIntent) }
     }
 }
