@@ -101,12 +101,22 @@ fun AntiKillScreen(
         androidx.core.content.ContextCompat.checkSelfPermission(
             context, android.Manifest.permission.ACCESS_FINE_LOCATION,
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    // Below API 29 there's no foreground/background location split — holding
+    // ACCESS_FINE_LOCATION already covers background reads, so treat it as
+    // granted there rather than checking a permission the platform doesn't
+    // enforce yet.
+    fun isBackgroundLocationGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     fun isLocationServicesOn(): Boolean {
         val lm = context.getSystemService(android.location.LocationManager::class.java)
         return lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
             lm?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
     }
     var locationGranted by remember { mutableStateOf(isLocationGranted()) }
+    var backgroundLocationGranted by remember { mutableStateOf(isBackgroundLocationGranted()) }
     var locationServicesOn by remember { mutableStateOf(isLocationServicesOn()) }
     var showLocationDeniedHint by remember { mutableStateOf(false) }
     val locationLauncher = rememberLauncherForActivityResult(
@@ -141,6 +151,7 @@ fun AntiKillScreen(
         notifGranted = OemHelper.areNotificationsEnabled(context)
         battGranted = OemHelper.isIgnoringBatteryOptimizations(context)
         locationGranted = isLocationGranted()
+        backgroundLocationGranted = isBackgroundLocationGranted()
         locationServicesOn = isLocationServicesOn()
     }
 
@@ -221,6 +232,7 @@ fun AntiKillScreen(
             AutoNetworkModeCard(
                 enabled = autoNetworkMode,
                 locationServicesOn = locationServicesOn,
+                backgroundLocationGranted = backgroundLocationGranted,
                 onToggle = { turningOn ->
                     showLocationDeniedHint = false
                     if (!turningOn) {
@@ -231,6 +243,7 @@ fun AntiKillScreen(
                         locationLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
                     }
                 },
+                onGrantBackgroundLocation = { OemHelper.openAppSettings(context) },
                 onManage = onOpenTrustedNetworks,
             )
             if (showLocationDeniedHint) {
@@ -455,7 +468,9 @@ private fun AutoStartCard(enabled: Boolean, onToggle: (Boolean) -> Unit, locked:
 private fun AutoNetworkModeCard(
     enabled: Boolean,
     locationServicesOn: Boolean,
+    backgroundLocationGranted: Boolean,
     onToggle: (Boolean) -> Unit,
+    onGrantBackgroundLocation: () -> Unit,
     onManage: () -> Unit,
 ) {
     Column(
@@ -515,6 +530,24 @@ private fun AutoNetworkModeCard(
         if (enabled && !locationServicesOn) {
             Spacer(Modifier.height(10.dp))
             HintBanner("Location services are off — DataProxy can't read the current Wi-Fi network without them. Turn Location on in system settings.")
+        }
+        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !backgroundLocationGranted) {
+            Spacer(Modifier.height(10.dp))
+            HintBanner(
+                "Auto mode can't detect network changes while DataProxy is in the " +
+                    "background (e.g. phone locked) without \"Allow all the time\" " +
+                    "location access. It only works while the app is open until you " +
+                    "grant it."
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onGrantBackgroundLocation,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Allow location all the time")
+            }
         }
         if (enabled) {
             Spacer(Modifier.height(10.dp))

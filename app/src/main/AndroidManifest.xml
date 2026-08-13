@@ -20,6 +20,15 @@
          Wi-Fi SSID for trusted-network matching. Declaring it here does
          not itself trigger a prompt. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Also opt-in only for Auto network mode, requested after
+         ACCESS_FINE_LOCATION is granted. WifiManager.getConnectionInfo()
+         redacts the SSID unless the caller counts as "foreground" for
+         location purposes — an active foreground service does not count,
+         so without this permission SSID reads (and therefore auto-enable)
+         silently stop working the moment the app itself is backgrounded
+         (e.g. phone locked). Android only lets this be granted via the
+         system Settings app on API 30+, not an in-app dialog. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
