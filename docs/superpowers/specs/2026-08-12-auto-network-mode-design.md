@@ -107,8 +107,10 @@ Each trusted entry is `(ssid, listenAddress, port)`, not a bare SSID —
 different trusted networks are plausibly different subnets, so a single
 global listen address (today's model) may simply not exist on a second
 trusted network. Stored as a single JSON-encoded string (a `JSONArray` of
-`{ssid, address, port}` objects) under a new `PREF_TRUSTED_NETWORKS` key
-in the existing `dataproxy_prefs` `SharedPreferences` file, using
+objects, each with **named** properties `"ssid"` / `"address"` /
+`"port"` — not a positional array/tuple, so field order is never
+load-bearing) under a new `PREF_TRUSTED_NETWORKS` key in the existing
+`dataproxy_prefs` `SharedPreferences` file, using
 `org.json.JSONArray`/`JSONObject` — part of the Android SDK itself
 (`android.jar`), not a new Gradle dependency. This avoids inventing a
 delimiter scheme entirely: SSIDs are arbitrary text a network operator
@@ -116,8 +118,12 @@ chooses, not something this app's user controls, so a real-world SSID
 containing a pipe, comma, or any other "safe-looking" separator is
 entirely plausible and must not be rejected. JSON string escaping handles
 arbitrary SSID content correctly with no validation or rejection needed.
-A small `TrustedNetworks` util wraps encode/decode/add/remove/update,
-mirroring the existing `AntiKillPreferences` style.
+Decoding reads each field with `optString`/`optInt` (defaulted, never a
+required/throwing read), so a future field can be added to the object
+later without a migration step or breaking the parse of entries an older
+version already saved. A small `TrustedNetworks` util wraps
+encode/decode/add/remove/update, mirroring the existing
+`AntiKillPreferences` style.
 
 Adding the **current** network reuses the existing `NetworkInterfaceLister`
 candidate picker and `PortField` from `ListenAddressScreen` inline in the
