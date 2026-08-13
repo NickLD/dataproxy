@@ -106,17 +106,18 @@ phone's listener regardless of what the watcher does).
 Each trusted entry is `(ssid, listenAddress, port)`, not a bare SSID —
 different trusted networks are plausibly different subnets, so a single
 global listen address (today's model) may simply not exist on a second
-trusted network. Stored as a `Set<String>` under a new
-`PREF_TRUSTED_NETWORKS` key in the existing `dataproxy_prefs`
-`SharedPreferences` file. Each element is the three fields joined by a
-literal `|` (pipe) separator — `ssid|address|port` — rather than pulling
-in a JSON dependency for three fields. Real-world SSIDs can technically
-contain a `|` character, so on save the SSID field is checked for it and
-rejected with an inline error ("network names containing `|` aren't
-supported") rather than silently mis-parsing later — simpler and more
-honest than an escaping scheme for a case this narrow. A small
-`TrustedNetworks` util wraps encode/decode/add/remove/update, mirroring
-the existing `AntiKillPreferences` style.
+trusted network. Stored as a single JSON-encoded string (a `JSONArray` of
+`{ssid, address, port}` objects) under a new `PREF_TRUSTED_NETWORKS` key
+in the existing `dataproxy_prefs` `SharedPreferences` file, using
+`org.json.JSONArray`/`JSONObject` — part of the Android SDK itself
+(`android.jar`), not a new Gradle dependency. This avoids inventing a
+delimiter scheme entirely: SSIDs are arbitrary text a network operator
+chooses, not something this app's user controls, so a real-world SSID
+containing a pipe, comma, or any other "safe-looking" separator is
+entirely plausible and must not be rejected. JSON string escaping handles
+arbitrary SSID content correctly with no validation or rejection needed.
+A small `TrustedNetworks` util wraps encode/decode/add/remove/update,
+mirroring the existing `AntiKillPreferences` style.
 
 Adding the **current** network reuses the existing `NetworkInterfaceLister`
 candidate picker and `PortField` from `ListenAddressScreen` inline in the
