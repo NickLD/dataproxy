@@ -356,12 +356,6 @@ Near the existing `private val cellular by lazy { ... }`, add:
 Near the existing `val cellularState: StateFlow<...> get() = cellular.state`, add:
 
 ```kotlin
-    val wifiSsidState: StateFlow<CellularNetworkProvider.State?> get() = null // placeholder removed below
-```
-
-Replace that placeholder line immediately with the real one (this two-step exists only so the diff is easy to review — write the final file with just the correct line, not both):
-
-```kotlin
     val wifiSsidState: StateFlow<String?> get() = wifiWatcher.ssid
 ```
 
@@ -901,10 +895,17 @@ git commit -m "Wire auto network mode and trusted-network CRUD into MainViewMode
 
 **Files:**
 - Create: `app/src/main/java/com/dataproxy/ui/screens/TrustedNetworksScreen.kt`
+- Modify: `app/src/main/java/com/dataproxy/ui/screens/ListenAddressScreen.kt` (visibility only, see Step 0)
 
 **Interfaces:**
 - Consumes: `MainViewModel.trustedNetworks`/`currentWifiSsid`/`addTrustedNetwork`/`removeTrustedNetwork`/`updateTrustedNetwork` (Task 7), `TrustedNetwork` (Task 1), `NetworkInterfaceLister` + the existing `AddressRow`/`PortField`/`TopBar`/`HintBanner` composables already defined in `ListenAddressScreen.kt` (same package, no import needed — Kotlin same-package visibility).
 - Produces: `@Composable fun TrustedNetworksScreen(viewModel: MainViewModel, onBack: () -> Unit)` — Task 10 (`AppNav`) calls this by name.
+
+**Pre-flight note:** `TopBar`/`HintBanner` in `ListenAddressScreen.kt` are already `internal` (cross-file visible within the module), but `AddressRow` and `PortField` in that same file are currently `private` — a top-level `private` declaration in Kotlin is file-private, not package-private, so `TrustedNetworksScreen.kt` cannot call them as-is. Step 0 widens just those two, matching the two that are already cross-file visible.
+
+- [ ] **Step 0: Widen `AddressRow`/`PortField` visibility in `ListenAddressScreen.kt`**
+
+Change `private fun AddressRow(` to `internal fun AddressRow(`, and `private fun PortField(` to `internal fun PortField(`. No other change to that file.
 
 - [ ] **Step 1: Write the screen**
 
@@ -1165,12 +1166,12 @@ private fun TrustedNetworkEditDialog(
 ```bash
 gradle :app:assembleDebug --no-daemon --console=plain 2>&1 | grep -E "^(e:|FAIL|BUILD)" | tail -15
 ```
-Expected: `BUILD SUCCESSFUL`. (`AddressRow`, `PortField`, `TopBar` resolve via same-package visibility from `ListenAddressScreen.kt` — if the build reports them unresolved, check those three are `internal`/package-private, not `private`, in that file; they already are per the existing code.)
+Expected: `BUILD SUCCESSFUL`. `AddressRow`/`PortField`/`TopBar` resolve via cross-file visibility from `ListenAddressScreen.kt` — Step 0 above is what makes `AddressRow`/`PortField` visible; `TopBar` was already `internal`.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/src/main/java/com/dataproxy/ui/screens/TrustedNetworksScreen.kt
+git add app/src/main/java/com/dataproxy/ui/screens/TrustedNetworksScreen.kt app/src/main/java/com/dataproxy/ui/screens/ListenAddressScreen.kt
 git commit -m "Add TrustedNetworksScreen for managing auto-mode trusted networks"
 ```
 
