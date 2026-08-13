@@ -186,7 +186,7 @@ internal fun HintBanner(message: String) {
 }
 
 @Composable
-private fun AddressRow(
+internal fun AddressRow(
     candidate: NetworkInterfaceLister.Candidate,
     selected: Boolean,
     enabled: Boolean,
@@ -239,7 +239,7 @@ private fun AddressRow(
 }
 
 @Composable
-private fun PortField(
+internal fun PortField(
     port: Int,
     enabled: Boolean,
     onChange: (Int) -> Unit,
