@@ -150,13 +150,20 @@ class ProxyService : Service() {
      * or running is a no-op.
      */
     fun startAutoWatch() {
-        if (_state.value !is State.Stopped) return
-        wifiWatcher.start()
-        _state.value = State.Idle()
-        startForegroundNow()
-        wifiWatchJob = scope.launch {
-            wifiWatcher.ssid.collect { ssid -> onSsidChanged(ssid) }
+        if (wifiWatchJob == null) {
+            wifiWatcher.start()
+            wifiWatchJob = scope.launch {
+                wifiWatcher.ssid.collect { ssid -> onSsidChanged(ssid) }
+            }
         }
+        when (_state.value) {
+            is State.Stopped, is State.Error -> _state.value = State.Idle()
+            is State.Running, is State.Paused, is State.Starting -> {
+                activeSsid = wifiWatcher.ssid.value
+            }
+            else -> Unit
+        }
+        startForegroundNow()
     }
 
     /** Full teardown, called when the user disables Auto mode entirely. */
@@ -185,9 +192,17 @@ class ProxyService : Service() {
                     }
                 }
                 is State.ManuallyStopped -> {
-                    if (ssid != cur.ssidAtStop) {
+                    if (ssid != null && ssid != cur.ssidAtStop) {
                         _state.value = State.Idle()
                         if (match != null) promote(match)
+                    }
+                }
+                is State.Error -> {
+                    if (match != null) {
+                        promote(match)
+                    } else {
+                        _state.value = State.Idle()
+                        startForegroundNow()
                     }
                 }
                 else -> Unit
@@ -293,7 +308,16 @@ class ProxyService : Service() {
             )
             server = srv
             srv.start()
+            if (_state.value !is State.Starting) {
+                srv.stop()
+                server = null
+                return@launch
+            }
             if (srv.running) {
+                if (isAutoActivation) {
+                    TrustedNetworks.setBindError(applicationContext, activeSsid ?: "", null)
+                    getSystemService(NotificationManager::class.java).cancel(BIND_FAIL_NOTIF_ID)
+                }
                 _state.value = State.Running(bindAddress, port)
                 acquireWakeLock()
                 startSampling()
