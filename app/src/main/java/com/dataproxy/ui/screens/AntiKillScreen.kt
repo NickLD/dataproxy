@@ -217,7 +217,7 @@ fun AntiKillScreen(
         ) {
             WhatIsThisBanner(visible = infoExpanded, onClose = { infoExpanded = false })
             HeroCard(pct = pct, granted = grantedCount, total = total, allDone = allDone)
-            AutoStartCard(enabled = autoStart, onToggle = viewModel::setAutoStartOnBoot)
+            AutoStartCard(enabled = autoStart, onToggle = viewModel::setAutoStartOnBoot, locked = autoNetworkMode)
             AutoNetworkModeCard(
                 enabled = autoNetworkMode,
                 locationServicesOn = locationServicesOn,
@@ -384,14 +384,14 @@ private fun HeroCard(pct: Float, granted: Int, total: Int, allDone: Boolean) {
  * manufacturer's whitelist that lets that receiver actually fire.
  */
 @Composable
-private fun AutoStartCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+private fun AutoStartCard(enabled: Boolean, onToggle: (Boolean) -> Unit, locked: Boolean = false) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(SurfaceLow)
             .border(1.dp, OutlineSoft, RoundedCornerShape(16.dp))
-            .clickable { onToggle(!enabled) }
+            .clickable(enabled = !locked) { onToggle(!enabled) }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -419,7 +419,9 @@ private fun AutoStartCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                if (enabled)
+                if (locked)
+                    "Controlled by Auto network mode."
+                else if (enabled)
                     "DataProxy starts automatically when your phone restarts."
                 else
                     "DataProxy stays off after a reboot until you open the app and tap power.",
@@ -431,6 +433,7 @@ private fun AutoStartCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
         Switch(
             checked = enabled,
             onCheckedChange = onToggle,
+            enabled = !locked,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = SurfaceLow,
                 checkedTrackColor = Accent,
