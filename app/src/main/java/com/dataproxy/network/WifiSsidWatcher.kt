@@ -5,9 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,9 +20,16 @@ import kotlinx.coroutines.flow.asStateFlow
  * both are the caller's responsibility to check/prompt for; this class
  * degrades to emitting `null` when either is missing rather than crashing.
  *
- * `NetworkCapabilities.transportInfo` (the modern way to read `WifiInfo` off
- * a callback) is API 29+; `minSdk` here is 26, so API 26-28 falls back to
- * the older `WifiManager.getConnectionInfo()` poll-on-change path instead.
+ * Deliberately reads the SSID via a direct `WifiManager.getConnectionInfo()`
+ * call, not `NetworkCapabilities.transportInfo` off the network callback.
+ * Confirmed on real hardware (Pixel 10 Pro XL, Android 17 / API 37): a
+ * `NetworkCallback`-delivered `WifiInfo` is redacted (`<unknown ssid>`,
+ * zeroed BSSID/MAC) even with ACCESS_FINE_LOCATION granted and Location on
+ * — the callback-delivery path applies stricter permission evaluation than
+ * a direct synchronous call made from the app's own context.
+ * `WifiManager.getConnectionInfo()` is deprecated API-style but remains the
+ * officially-documented, functionally-correct way to read the current
+ * connection's SSID; it is not being removed.
  */
 class WifiSsidWatcher(context: Context) {
 
@@ -39,9 +44,8 @@ class WifiSsidWatcher(context: Context) {
 
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-            Log.w(TAG, "DIAG onCapabilitiesChanged fired network=$network")
             currentNetwork = network
-            _ssid.value = extractSsid(caps)
+            _ssid.value = extractSsid()
         }
 
         override fun onLost(network: Network) {
@@ -77,15 +81,9 @@ class WifiSsidWatcher(context: Context) {
         _ssid.value = null
     }
 
-    private fun extractSsid(caps: NetworkCapabilities): String? {
-        val transportRaw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val info = caps.transportInfo as? WifiInfo
-            runCatching { info?.ssid }.getOrNull()
-        } else null
+    private fun extractSsid(): String? {
         @Suppress("DEPRECATION")
-        val directRaw = runCatching { wifiManager.connectionInfo?.ssid }.getOrNull()
-        Log.w(TAG, "DIAG transportRaw=$transportRaw directRaw=$directRaw sdkInt=${Build.VERSION.SDK_INT}")
-        val raw = directRaw ?: transportRaw
+        val raw = runCatching { wifiManager.connectionInfo?.ssid }.getOrNull()
         if (raw.isNullOrEmpty() || raw == UNKNOWN_SSID) return null
         // WifiInfo.getSSID() double-quotes the SSID when it's valid UTF-8
         // text — the common case for a human-chosen network name.
