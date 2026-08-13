@@ -19,6 +19,8 @@ import com.dataproxy.service.ProxyService
 import com.dataproxy.ui.theme.ThemeMode
 import com.dataproxy.util.AntiKillPreferences
 import com.dataproxy.util.RateUnit
+import com.dataproxy.util.TrustedNetwork
+import com.dataproxy.util.TrustedNetworks
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,6 +91,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _autoStartOnBoot = MutableStateFlow(AntiKillPreferences.autoStartOnBoot(app))
     val autoStartOnBoot: StateFlow<Boolean> = _autoStartOnBoot.asStateFlow()
 
+    private val _wifiSsid = MutableStateFlow<String?>(null)
+    val currentWifiSsid: StateFlow<String?> = _wifiSsid.asStateFlow()
+
+    private val _autoNetworkModeEnabled = MutableStateFlow(
+        AntiKillPreferences.autoNetworkModeEnabled(app)
+    )
+    val autoNetworkModeEnabled: StateFlow<Boolean> = _autoNetworkModeEnabled.asStateFlow()
+
+    private val _trustedNetworks = MutableStateFlow(TrustedNetworks.list(app))
+    val trustedNetworks: StateFlow<List<TrustedNetwork>> = _trustedNetworks.asStateFlow()
+
     private var bound: ProxyService? = null
     private val collectors = mutableListOf<Job>()
 
@@ -113,6 +126,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         collectors += service.totals.onEach { _totals.value = it }.launchIn(viewModelScope)
         collectors += service.rates.onEach { _rates.value = it }.launchIn(viewModelScope)
         collectors += service.cellularState.onEach { _cellular.value = it }.launchIn(viewModelScope)
+        collectors += service.wifiSsidState.onEach { _wifiSsid.value = it }.launchIn(viewModelScope)
     }
 
     fun bind() {
@@ -164,6 +178,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setAutoStartOnBoot(enabled: Boolean) {
         AntiKillPreferences.setAutoStartOnBoot(getApplication(), enabled)
         _autoStartOnBoot.value = enabled
+    }
+
+    fun refreshTrustedNetworks() {
+        _trustedNetworks.value = TrustedNetworks.list(getApplication())
+    }
+
+    fun addTrustedNetwork(network: TrustedNetwork) {
+        TrustedNetworks.add(getApplication(), network)
+        refreshTrustedNetworks()
+    }
+
+    fun removeTrustedNetwork(ssid: String) {
+        TrustedNetworks.remove(getApplication(), ssid)
+        refreshTrustedNetworks()
+    }
+
+    fun updateTrustedNetwork(network: TrustedNetwork) {
+        TrustedNetworks.update(getApplication(), network)
+        refreshTrustedNetworks()
+    }
+
+    /**
+     * Turning Auto mode on also enables boot-autostart (a watcher that
+     * doesn't survive a reboot silently stops doing anything) and starts
+     * the service watching immediately, rather than waiting for the next
+     * reboot to have any effect. Turning it off fully stops the service.
+     */
+    fun setAutoNetworkModeEnabled(enabled: Boolean) {
+        AntiKillPreferences.setAutoNetworkModeEnabled(getApplication(), enabled)
+        _autoNetworkModeEnabled.value = enabled
+        val ctx = getApplication<Application>()
+        if (enabled) {
+            AntiKillPreferences.setAutoStartOnBoot(ctx, true)
+            _autoStartOnBoot.value = true
+            runCatching {
+                val intent = ProxyService.startAutoIntent(ctx)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ctx.startForegroundService(intent)
+                } else {
+                    ctx.startService(intent)
+                }
+            }
+        } else {
+            ctx.startService(ProxyService.disableAutoIntent(ctx))
+        }
     }
 
     fun cycleThemeMode() {
