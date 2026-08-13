@@ -45,7 +45,7 @@ import com.dataproxy.ui.theme.Warning
 import com.dataproxy.ui.viewmodel.MainViewModel
 import com.dataproxy.util.AntiKillStep
 
-enum class Tab { Home, ListenAddress, Devices, Auth, AntiKill }
+enum class Tab { Home, ListenAddress, Devices, Auth, AntiKill, TrustedNetworks }
 
 @Composable
 fun AppNav(
@@ -113,6 +113,11 @@ fun AppNav(
                 Tab.AntiKill -> AntiKillScreen(
                     viewModel = viewModel,
                     onBack = { onTabChange(Tab.Home) },
+                    onOpenTrustedNetworks = { onTabChange(Tab.TrustedNetworks) },
+                )
+                Tab.TrustedNetworks -> TrustedNetworksScreen(
+                    viewModel = viewModel,
+                    onBack = { onTabChange(Tab.AntiKill) },
                 )
             }
         }
