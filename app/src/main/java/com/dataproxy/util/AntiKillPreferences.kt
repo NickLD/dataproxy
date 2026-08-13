@@ -15,6 +15,7 @@ import com.dataproxy.service.ProxyService
  */
 object AntiKillPreferences {
     private const val KEY_AUTOSTART = "autostart_on_boot"
+    private const val KEY_AUTO_NETWORK_MODE = "auto_network_mode"
     private fun stepKey(step: AntiKillStep) = "antikill_step_${step.name}"
 
     private fun prefs(context: Context) =
@@ -25,6 +26,13 @@ object AntiKillPreferences {
 
     fun setAutoStartOnBoot(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_AUTOSTART, enabled).apply()
+    }
+
+    fun autoNetworkModeEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_NETWORK_MODE, false)
+
+    fun setAutoNetworkModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_NETWORK_MODE, enabled).apply()
     }
 
     fun stepDone(context: Context, step: AntiKillStep): Boolean =
