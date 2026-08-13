@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Long-lived host for the SOCKS5 listener.
@@ -63,6 +65,7 @@ class ProxyService : Service() {
     private var wifiWatchJob: Job? = null
     private var autoDemoteJob: Job? = null
     private var activeSsid: String? = null
+    private val ssidTransitionMutex = Mutex()
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val _state = MutableStateFlow<State>(State.Stopped)
@@ -167,26 +170,28 @@ class ProxyService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 
-    private fun onSsidChanged(ssid: String?) {
-        autoDemoteJob?.cancel(); autoDemoteJob = null
-        val match = ssid?.let { TrustedNetworks.find(applicationContext, it) }
-        when (val cur = _state.value) {
-            is State.Idle -> if (match != null) promote(match)
-            is State.Starting, is State.Running, is State.Paused -> {
-                if (match == null || match.ssid != activeSsid) {
-                    autoDemoteJob = scope.launch {
-                        delay(5_000L)
-                        demoteToIdle()
+    private suspend fun onSsidChanged(ssid: String?) {
+        ssidTransitionMutex.withLock {
+            autoDemoteJob?.cancel(); autoDemoteJob = null
+            val match = ssid?.let { TrustedNetworks.find(applicationContext, it) }
+            when (val cur = _state.value) {
+                is State.Idle -> if (match != null) promote(match)
+                is State.Starting, is State.Running, is State.Paused -> {
+                    if (match == null || match.ssid != activeSsid) {
+                        autoDemoteJob = scope.launch {
+                            delay(5_000L)
+                            demoteToIdle()
+                        }
                     }
                 }
-            }
-            is State.ManuallyStopped -> {
-                if (ssid != cur.ssidAtStop) {
-                    _state.value = State.Idle()
-                    if (match != null) promote(match)
+                is State.ManuallyStopped -> {
+                    if (ssid != cur.ssidAtStop) {
+                        _state.value = State.Idle()
+                        if (match != null) promote(match)
+                    }
                 }
+                else -> Unit
             }
-            else -> Unit
         }
     }
 
@@ -195,20 +200,22 @@ class ProxyService : Service() {
         startProxy(network.address, network.port, isAutoActivation = true)
     }
 
-    private fun demoteToIdle() {
-        if (_state.value !is State.Running && _state.value !is State.Paused && _state.value !is State.Starting) return
-        fullCleanup()
-        activeSsid = null
-        _state.value = State.Idle()
-        startForegroundNow()
-        // The SSID may have already settled on a different trusted network by
-        // the time this debounced check runs (e.g. roaming directly from one
-        // trusted network to another) — re-check and promote immediately
-        // instead of waiting for a further, distinct SSID emission that may
-        // never come (StateFlow is conflated).
-        val currentSsid = wifiWatcher.ssid.value
-        val match = currentSsid?.let { TrustedNetworks.find(applicationContext, it) }
-        if (match != null) promote(match)
+    private suspend fun demoteToIdle() {
+        ssidTransitionMutex.withLock {
+            if (_state.value !is State.Running && _state.value !is State.Paused && _state.value !is State.Starting) return@withLock
+            fullCleanup()
+            activeSsid = null
+            _state.value = State.Idle()
+            startForegroundNow()
+            // The SSID may have already settled on a different trusted network by
+            // the time this debounced check runs (e.g. roaming directly from one
+            // trusted network to another) — re-check and promote immediately
+            // instead of waiting for a further, distinct SSID emission that may
+            // never come (StateFlow is conflated).
+            val currentSsid = wifiWatcher.ssid.value
+            val match = currentSsid?.let { TrustedNetworks.find(applicationContext, it) }
+            if (match != null) promote(match)
+        }
     }
 
     fun startProxy(bindAddress: String, port: Int, isAutoActivation: Boolean = false) {
