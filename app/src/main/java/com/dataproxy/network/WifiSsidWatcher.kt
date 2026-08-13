@@ -25,11 +25,11 @@ import kotlinx.coroutines.flow.asStateFlow
  * Confirmed on real hardware (Pixel 10 Pro XL, Android 17 / API 37): a
  * `NetworkCallback`-delivered `WifiInfo` is redacted (`<unknown ssid>`,
  * zeroed BSSID/MAC) even with ACCESS_FINE_LOCATION granted and Location on
- * — the callback-delivery path applies stricter permission evaluation than
- * a direct synchronous call made from the app's own context.
- * `WifiManager.getConnectionInfo()` is deprecated API-style but remains the
- * officially-documented, functionally-correct way to read the current
- * connection's SSID; it is not being removed.
+ * — the callback-delivery path evidently applies a different (likely
+ * stricter) permission check than a direct synchronous call, though the
+ * exact mechanism wasn't confirmed.
+ * `WifiManager.getConnectionInfo()` is deprecated but still functions
+ * correctly and isn't scheduled for removal.
  */
 class WifiSsidWatcher(context: Context) {
 
