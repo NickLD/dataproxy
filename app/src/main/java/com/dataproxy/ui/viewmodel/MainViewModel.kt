@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -187,6 +188,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun addTrustedNetwork(network: TrustedNetwork) {
         TrustedNetworks.add(getApplication(), network)
         refreshTrustedNetworks()
+        bound?.let { svc -> viewModelScope.launch { svc.recheckTrustedNetworks() } }
     }
 
     fun removeTrustedNetwork(ssid: String) {
@@ -197,6 +199,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateTrustedNetwork(network: TrustedNetwork) {
         TrustedNetworks.update(getApplication(), network)
         refreshTrustedNetworks()
+        bound?.let { svc -> viewModelScope.launch { svc.recheckTrustedNetworks() } }
     }
 
     /**

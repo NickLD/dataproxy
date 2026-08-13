@@ -212,9 +212,28 @@ class ProxyService : Service() {
             // trusted network to another) — re-check and promote immediately
             // instead of waiting for a further, distinct SSID emission that may
             // never come (StateFlow is conflated).
-            val currentSsid = wifiWatcher.ssid.value
-            val match = currentSsid?.let { TrustedNetworks.find(applicationContext, it) }
-            if (match != null) promote(match)
+            promoteIfCurrentSsidMatches()
+        }
+    }
+
+    private fun promoteIfCurrentSsidMatches() {
+        val currentSsid = wifiWatcher.ssid.value
+        val match = currentSsid?.let { TrustedNetworks.find(applicationContext, it) }
+        if (match != null) promote(match)
+    }
+
+    /**
+     * Called after the trusted-network list changes (add/edit) so a
+     * newly-trusted network that's already the current connection promotes
+     * immediately, instead of waiting for some future distinct SSID
+     * emission that may never come (the phone doesn't need to actually
+     * change networks for "trust the one I'm on right now" to work).
+     */
+    suspend fun recheckTrustedNetworks() {
+        ssidTransitionMutex.withLock {
+            if (_state.value is State.Idle) {
+                promoteIfCurrentSsidMatches()
+            }
         }
     }
 
