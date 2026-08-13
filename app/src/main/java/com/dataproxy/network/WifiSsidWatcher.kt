@@ -16,9 +16,16 @@ import kotlinx.coroutines.flow.asStateFlow
  * Auto mode's trusted-network matching.
  *
  * Reading the real SSID (rather than Android's `<unknown ssid>` placeholder)
- * requires ACCESS_FINE_LOCATION *and* system Location services to be on —
- * both are the caller's responsibility to check/prompt for; this class
- * degrades to emitting `null` when either is missing rather than crashing.
+ * requires ACCESS_FINE_LOCATION, system Location services to be on, *and*
+ * — since this class is read from a foreground service, not a visible
+ * Activity — ACCESS_BACKGROUND_LOCATION, or every read while the app itself
+ * is backgrounded (e.g. phone locked) comes back redacted even though the
+ * foreground-only grant looks identical from inside the app. Confirmed live:
+ * without it, Auto mode only ever promoted a trusted network within seconds
+ * of the app being opened, never while just sitting in a pocket. All three
+ * are the caller's responsibility to check/prompt for (see AntiKillScreen);
+ * this class degrades to emitting `null` when any is missing rather than
+ * crashing.
  *
  * Deliberately reads the SSID via a direct `WifiManager.getConnectionInfo()`
  * call, not `NetworkCapabilities.transportInfo` off the network callback.
