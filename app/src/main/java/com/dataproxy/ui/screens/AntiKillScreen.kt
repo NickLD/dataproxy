@@ -97,22 +97,23 @@ fun AntiKillScreen(
 
     val autoStart by viewModel.autoStartOnBoot.collectAsStateWithLifecycle()
     val autoNetworkMode by viewModel.autoNetworkModeEnabled.collectAsStateWithLifecycle()
-    var locationGranted by remember {
-        mutableStateOf(
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.ACCESS_FINE_LOCATION,
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        )
-    }
-    val locationServicesOn = remember {
+    fun isLocationGranted(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    fun isLocationServicesOn(): Boolean {
         val lm = context.getSystemService(android.location.LocationManager::class.java)
-        lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
+        return lm?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
             lm?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
     }
+    var locationGranted by remember { mutableStateOf(isLocationGranted()) }
+    var locationServicesOn by remember { mutableStateOf(isLocationServicesOn()) }
+    var showLocationDeniedHint by remember { mutableStateOf(false) }
     val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         locationGranted = granted
+        showLocationDeniedHint = !granted
         if (granted) viewModel.setAutoNetworkModeEnabled(true)
     }
     var infoExpanded by rememberSaveable { mutableStateOf(false) }
@@ -139,6 +140,8 @@ fun AntiKillScreen(
     fun reSync() {
         notifGranted = OemHelper.areNotificationsEnabled(context)
         battGranted = OemHelper.isIgnoringBatteryOptimizations(context)
+        locationGranted = isLocationGranted()
+        locationServicesOn = isLocationServicesOn()
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -219,6 +222,7 @@ fun AntiKillScreen(
                 enabled = autoNetworkMode,
                 locationServicesOn = locationServicesOn,
                 onToggle = { turningOn ->
+                    showLocationDeniedHint = false
                     if (!turningOn) {
                         viewModel.setAutoNetworkModeEnabled(false)
                     } else if (locationGranted) {
@@ -229,6 +233,10 @@ fun AntiKillScreen(
                 },
                 onManage = onOpenTrustedNetworks,
             )
+            if (showLocationDeniedHint) {
+                Spacer(Modifier.height(8.dp))
+                HintBanner("Auto network mode needs location access to read the current Wi-Fi network — Android requires this. You can try again anytime.")
+            }
             AntiKillStep.entries.forEach { step ->
                 StepCard(
                     step = step,
