@@ -68,14 +68,26 @@ fun ListenAddressScreen(
 ) {
     BackHandler(onBack = onBack)
     val candidates by viewModel.interfaces.collectAsStateWithLifecycle()
-    val bindAddress by viewModel.bindAddress.collectAsStateWithLifecycle()
-    val port by viewModel.port.collectAsStateWithLifecycle()
+    val savedBindAddress by viewModel.bindAddress.collectAsStateWithLifecycle()
+    val savedPort by viewModel.port.collectAsStateWithLifecycle()
     val serviceState by viewModel.serviceState.collectAsStateWithLifecycle()
 
     val canEdit = when (serviceState) {
         is ProxyService.State.Stopped, is ProxyService.State.Error -> true
         else -> false
     }
+    // While Auto mode has activated on a trusted network's own address/port,
+    // that's what's actually listening — not the saved manual settings this
+    // screen edits. Show the live value; editing stays gated by canEdit.
+    val (bindAddress, port) = when (val s = serviceState) {
+        is ProxyService.State.Running -> s.bindAddress to s.port
+        is ProxyService.State.Starting -> s.bindAddress to s.port
+        is ProxyService.State.Paused -> s.bindAddress to s.port
+        else -> savedBindAddress to savedPort
+    }
+    val autoNetworkModeEnabled by viewModel.autoNetworkModeEnabled.collectAsStateWithLifecycle()
+    val showingAutoOverride = autoNetworkModeEnabled &&
+        (bindAddress != savedBindAddress || port != savedPort)
 
     Column(
         modifier = Modifier
@@ -98,7 +110,14 @@ fun ListenAddressScreen(
             },
         )
         Spacer(Modifier.height(8.dp))
-        if (!canEdit) {
+        if (showingAutoOverride) {
+            HintBanner(
+                "Listening on this trusted network's own address/port (set in " +
+                    "Anti-Kill → Manage trusted networks), not your manual default. " +
+                    "Stop the proxy to see or edit the manual default."
+            )
+            Spacer(Modifier.height(8.dp))
+        } else if (!canEdit) {
             HintBanner(
                 "Stop the proxy to change the listen address or port."
             )

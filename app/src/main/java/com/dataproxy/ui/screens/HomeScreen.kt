@@ -103,6 +103,15 @@ fun HomeScreen(
         is ProxyService.State.ManuallyStopped -> "Idle"
         else -> "Proxy offline"
     }
+    // The service can be listening on a trusted network's own address/port
+    // (Auto mode), which differs from the saved manual bindAddress/port —
+    // reflect whatever it's actually bound to right now.
+    val (listenAddress, listenPort) = when (val s = serviceState) {
+        is ProxyService.State.Running -> s.bindAddress to s.port
+        is ProxyService.State.Starting -> s.bindAddress to s.port
+        is ProxyService.State.Paused -> s.bindAddress to s.port
+        else -> bindAddress to port
+    }
 
     Column(
         modifier = Modifier
@@ -150,7 +159,7 @@ fun HomeScreen(
             NavTile(
                 icon = Icons.Rounded.Router,
                 title = "Listen",
-                subtitle = "$bindAddress:$port",
+                subtitle = "$listenAddress:$listenPort",
                 onClick = onOpenListen,
                 modifier = Modifier.weight(1f),
             )
