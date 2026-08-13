@@ -438,6 +438,31 @@ class ProxyService : Service() {
             .build()
     }
 
+    /**
+     * Auto mode's activation failed to bind. Distinct from the persistent
+     * ongoing status notification — dismissible, one-shot — since a silent
+     * fallback to Idle alone would create false confidence the backup WAN
+     * is live when it isn't.
+     */
+    private fun postBindFailureNotification(ssid: String?, message: String) {
+        val label = ssid ?: "trusted network"
+        val openIntent = PendingIntent.getActivity(
+            this, 2,
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_proxy)
+            .setContentTitle("DataProxy couldn't start on \"$label\"")
+            .setContentText(message)
+            .setAutoCancel(true)
+            .setContentIntent(openIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(BIND_FAIL_NOTIF_ID, notif)
+    }
+
     private fun ensureChannel() {
         val mgr = getSystemService(NotificationManager::class.java)
         if (mgr.getNotificationChannel(CHANNEL_ID) == null) {
@@ -499,6 +524,7 @@ class ProxyService : Service() {
 
         private const val CHANNEL_ID = "dataproxy.status"
         private const val NOTIF_ID = 1001
+        private const val BIND_FAIL_NOTIF_ID = 1002
 
         // Mirrored by [com.dataproxy.ui.viewmodel.MainViewModel] — must match.
         const val PREFS_NAME = "dataproxy_prefs"
