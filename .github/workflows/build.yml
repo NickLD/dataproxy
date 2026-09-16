@@ -37,8 +37,12 @@ jobs:
           unzip -q gradle-8.10.2-bin.zip -d "$HOME"
           echo "$HOME/gradle-8.10.2/bin" >> "$GITHUB_PATH"
 
+      # gradle.properties pins org.gradle.java.home to the maintainer's own
+      # local JBR path (/opt/android-studio/jbr), which doesn't exist here.
+      # Override it on the command line rather than edit the shared file,
+      # command-line -D wins over gradle.properties and this only affects CI.
       - name: Assemble debug APK
-        run: gradle :app:assembleDebug --no-daemon --console=plain
+        run: gradle :app:assembleDebug --no-daemon --console=plain -Dorg.gradle.java.home="$JAVA_HOME"
 
       - uses: actions/upload-artifact@v4
         with:
