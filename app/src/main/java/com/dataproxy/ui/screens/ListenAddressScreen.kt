@@ -71,7 +71,6 @@ fun ListenAddressScreen(
     val candidates by viewModel.interfaces.collectAsStateWithLifecycle()
     val bindAddress by viewModel.bindAddress.collectAsStateWithLifecycle()
     val port by viewModel.port.collectAsStateWithLifecycle()
-    val maxConnections by viewModel.maxConnections.collectAsStateWithLifecycle()
     val serviceState by viewModel.serviceState.collectAsStateWithLifecycle()
 
     val canEdit = when (serviceState) {
@@ -133,11 +132,6 @@ fun ListenAddressScreen(
             port = port,
             enabled = canEdit,
             onChange = viewModel::selectPort,
-        )
-        Spacer(Modifier.height(10.dp))
-        MaxConnectionsField(
-            value = maxConnections,
-            onChange = viewModel::setMaxConnections,
         )
     }
 }
@@ -292,53 +286,4 @@ private fun PortField(
         ),
         modifier = Modifier.fillMaxWidth(),
     )
-}
-
-@Composable
-private fun MaxConnectionsField(
-    value: Int,
-    onChange: (Int) -> Unit,
-) {
-    var text by remember { mutableStateOf(value.toString()) }
-    LaunchedEffect(value) { text = value.toString() }
-
-    Column {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { v ->
-                text = v.filter { it.isDigit() }.take(6)
-                // Not gated on canEdit: Socks5Server re-reads this on every
-                // accept(), so it applies to the next incoming connection
-                // whether the proxy is running or not, no restart needed.
-                text.toIntOrNull()?.let(onChange)
-            },
-            label = { Text("Max connections") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            textStyle = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 15.sp,
-                color = TextPrimary,
-            ),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Accent,
-                unfocusedBorderColor = OutlineStrong,
-                disabledBorderColor = OutlineSoft,
-                focusedLabelColor = Accent,
-                unfocusedLabelColor = TextSecondary,
-                cursorColor = Accent,
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary,
-                disabledTextColor = TextMuted,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "0 = unlimited. Applies to new connections immediately, no restart needed.",
-            color = TextMuted,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(start = 4.dp),
-        )
-    }
 }
