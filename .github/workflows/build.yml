@@ -17,7 +17,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      # android-actions/setup-android@v3 shells out to `sdkmanager tools`,
+      # a package Google dropped from the SDK repository; that now fails
+      # outright before anything Android-related runs. ubuntu-latest already
+      # ships an SDK (ANDROID_HOME set, cmdline-tools present), so just
+      # accept its licenses and let AGP fetch platform-36 / build-tools on
+      # demand during the build, same as a local machine with SDK licenses
+      # already accepted.
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
 
       - uses: gradle/actions/setup-gradle@v4
         with:
