@@ -27,9 +27,15 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
 
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.10.2
+      # gradle/actions/setup-gradle@v4's own provisioning step fails here
+      # with no diagnostic output (just "process '/usr/bin/gradle' failed"),
+      # so install the exact version the project builds with (per CLAUDE.md)
+      # directly rather than fight the action's opaque failure.
+      - name: Install Gradle 8.10.2
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+          unzip -q gradle-8.10.2-bin.zip -d "$HOME"
+          echo "$HOME/gradle-8.10.2/bin" >> "$GITHUB_PATH"
 
       - name: Assemble debug APK
         run: gradle :app:assembleDebug --no-daemon --console=plain
