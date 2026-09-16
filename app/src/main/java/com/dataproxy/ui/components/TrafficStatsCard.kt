@@ -119,23 +119,26 @@ private fun CountTile(
             color = TextMuted,
         )
         Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            text = count.toString(),
+            color = TextPrimary,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                fontSize = 18.sp,
+            ),
+            maxLines = 1,
+        )
+        // Cap on its own, smaller line rather than sharing the count's row:
+        // a Row lets each Text wrap independently, and a multi-digit cap
+        // (e.g. 1024) at this tile's ~1/3-card width broke mid-digit across
+        // two lines. This can't overflow the same way since it's shorter and
+        // in a smaller face.
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = count.toString(),
-                color = TextPrimary,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 18.sp,
-                ),
-            )
-            Text(
-                text = " / ",
+                text = "/ ",
                 color = TextMuted,
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 18.sp,
-                ),
+                style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
             )
             // cap <= 0 is Socks5Server's own "unlimited" sentinel (see
             // MAX_CONNECTIONS docs), shown as infinity rather than "0" so it
@@ -145,12 +148,12 @@ private fun CountTile(
             Text(
                 text = if (cap > 0) cap.toString() else "∞",
                 color = TextMuted,
-                style = MaterialTheme.typography.titleLarge.copy(
+                style = MaterialTheme.typography.labelMedium.copy(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
-                    fontSize = 18.sp,
                     textDecoration = TextDecoration.Underline,
                 ),
+                maxLines = 1,
                 modifier = Modifier
                     .semantics(mergeDescendants = true) {}
                     .clip(RoundedCornerShape(4.dp))
